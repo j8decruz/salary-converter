@@ -1,0 +1,13 @@
+{
+  "name": "salary-converter",
+  "private": true,
+  "type": "module",
+  "description": "Purchasing-power salary converter. Static site, no runtime dependencies.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build:data": "node scripts/build-data.mjs",
+    "build:geo": "node scripts/build-geo.mjs",
+    "test": "node --test test/sources.test.mjs",
+    "serve": "npx --yes serve public -l 4173"
+  }
+}
