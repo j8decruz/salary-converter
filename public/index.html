@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salary converter</title>
+<meta name="description" content="What a salary is worth in purchasing-power terms in any other country, using World Bank PPP data and today's exchange rates.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2317202B'/%3E%3Crect x='7' y='17' width='5' height='8' rx='1.5' fill='%236A9FC6'/%3E%3Crect x='14' y='11' width='5' height='14' rx='1.5' fill='%23DCDDDF'/%3E%3Crect x='21' y='7' width='5' height='18' rx='1.5' fill='%23DB9660'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/bricolage-grotesque-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="world.json" as="fetch" crossorigin>
+<link rel="preload" href="data.json" as="fetch" crossorigin>
+<style>
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("fonts/bricolage-grotesque-latin-wght.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+:root {
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --page: #EDF0F3;
+  --panel: #FBFCFD;
+  --ink: #17202B;
+  --ink-2: #4A5563;
+  --ink-3: #6E7886;
+  --line: #D8DDE3;
+  --focus: #2F6F9E;
+  --sea: #F6F8FA;
+  --nodata: #E6E9ED;
+  --nodata-hatch: #CCD2D9;
+  --stroke: #FBFCFD;
+
+  /* Diverging scale: cheaper (blue) <- neutral -> pricier (orange). */
+  --c4: #1A4C74; --c3: #2F6F9E; --c2: #6A9FC6; --c1: #A9C8DF;
+  --n0: #DCDDDF;
+  --p1: #EBC4A3; --p2: #DB9660; --p3: #B8682A; --p4: #7C4114;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0F141A;
+    --panel: #151B22;
+    --ink: #E7ECF1;
+    --ink-2: #B3BCC7;
+    --ink-3: #8A94A1;
+    --line: #2A323C;
+    --focus: #73AEDA;
+    --sea: #0F141A;
+    --nodata: #1C232B;
+    --nodata-hatch: #2A333D;
+    --stroke: #0F141A;
+    --c4: #A6CDEB; --c3: #73AEDA; --c2: #4E8DBC; --c1: #3D6F94;
+    --n0: #3A4049;
+    --p1: #925F38; --p2: #BA7840; --p3: #DE9A5A; --p4: #F2C08C;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(380px, 460px) 1fr;
+  height: 100%;
+}
+.panel {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 28px 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.panel > * { flex-shrink: 0; }
+
+/* Masthead */
+.masthead h1 {
+  font: 600 15px/1.2 var(--font-display);
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+.masthead p { margin: 4px 0 0; color: var(--ink-3); font-size: 13.5px; }
+
+/* The sentence calculator */
+.sentence {
+  font: 400 clamp(26px, 2.6vw, 34px)/1.35 var(--font-display);
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.slot {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border-bottom: 2px solid var(--ink);
+  padding: 0 2px;
+  margin: 0 2px;
+  position: relative;
+}
+.slot:focus-within { border-bottom-color: var(--focus); }
+.slot input {
+  border: 0;
+  background: transparent;
+  font: 600 1em/1.2 var(--font-display);
+  letter-spacing: -0.02em;
+  padding: 0;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.slot .unit { font-weight: 500; color: var(--ink-3); font-size: 0.62em; letter-spacing: 0.02em; }
+#amount { width: 6.2ch; }
+.country-slot input { width: 9ch; text-overflow: ellipsis; }
+.country-slot .chev { font-size: 0.5em; color: var(--ink-3); transform: translateY(-0.15em); pointer-events: none; }
+
+.listbox {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -2px;
+  z-index: 20;
+  width: min(320px, 80vw);
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px -12px rgba(16, 24, 40, 0.35);
+  font: 14.5px/1.3 var(--font-body);
+  letter-spacing: 0;
+}
+.listbox[hidden] { display: none; }
+.listbox li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.listbox li .cur { color: var(--ink-3); font-size: 12.5px; }
+.listbox li[aria-selected="true"] { background: color-mix(in srgb, var(--focus) 14%, transparent); }
+.listbox .empty { color: var(--ink-3); cursor: default; }
+
+/* Result for the selected country */
+.result { min-height: 168px; }
+.result .lead { margin: 0; color: var(--ink-2); font-size: 15px; }
+.result .lead strong { color: var(--ink); font-weight: 600; }
+.result .figure {
+  font: 600 clamp(40px, 4.4vw, 56px)/1.05 var(--font-display);
+  letter-spacing: -0.03em;
+  margin: 6px 0 10px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.result .compare { margin: 0; font-size: 15px; color: var(--ink-2); max-width: 46ch; }
+.result .compare b { color: var(--ink); font-weight: 600; }
+.swatch-inline { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: 0; }
+.result .caveat { margin: 10px 0 0; font-size: 13px; color: var(--ink-3); max-width: 46ch; }
+.result .prompt { color: var(--ink-3); margin: 0; }
+
+/* Ranked list */
+.ranking { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.ranking-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ranking-head h2 { font: 600 15px/1.2 var(--font-display); margin: 0 auto 0 0; }
+.filter {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.sort { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+.sort button {
+  border: 0;
+  background: transparent;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.sort button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { border-top: 1px solid var(--line); }
+.rows li:first-child { border-top: 0; }
+.more { align-self: flex-start; border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 7px 12px; font-size: 13.5px; cursor: pointer; color: var(--ink-2); }
+.more:hover { border-color: var(--ink-3); color: var(--ink); }
+.more[hidden] { display: none; }
+.row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 76px auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.row:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.row[aria-current="true"] { background: color-mix(in srgb, var(--focus) 12%, transparent); }
+.row .name { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .name small { color: var(--ink-3); font-size: 12px; margin-left: 4px; }
+.row .val { font-size: 13.5px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.row .val small { display: block; color: var(--ink-3); font-size: 12px; }
+.bar { position: relative; height: 10px; }
+.bar::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--ink-3); opacity: 0.6; }
+.bar span { position: absolute; top: 2px; height: 6px; border-radius: 3px; }
+
+/* Sources */
+.sources { margin-top: auto; font-size: 12.5px; color: var(--ink-3); border-top: 1px solid var(--line); padding-top: 14px; }
+.sources p { margin: 0 0 6px; }
+.sources a { color: var(--ink-2); }
+.sources details summary { cursor: pointer; color: var(--ink-2); }
+.sources details p { margin-top: 8px; max-width: 60ch; }
+
+/* Map */
+.map-pane { position: relative; overflow: hidden; background: var(--sea); touch-action: none; }
+.map-pane svg { width: 100%; height: 100%; display: block; cursor: grab; }
+.map-pane svg.dragging { cursor: grabbing; }
+.land { stroke: var(--stroke); stroke-width: 0.35; vector-effect: non-scaling-stroke; transition: fill 260ms ease; }
+.land.nodata { fill: url(#hatch); }
+.dot { stroke: var(--stroke); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.outline { fill: none; stroke: var(--ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; pointer-events: none; }
+.outline.base { stroke-dasharray: 4 3; }
+.hover-outline { fill: none; stroke: var(--ink); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; opacity: 0.7; }
+
+.zoom { position: absolute; top: 16px; right: 16px; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+.zoom button { width: 36px; height: 36px; border: 0; background: transparent; font-size: 18px; cursor: pointer; color: var(--ink-2); }
+.zoom button + button { border-top: 1px solid var(--line); }
+.zoom button:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+
+.legend {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+  max-width: calc(100% - 40px);
+}
+.legend .title { margin: 0 0 8px; color: var(--ink); font-size: 12.5px; }
+.legend .scale { display: grid; grid-template-columns: repeat(9, 42px); gap: 2px; }
+.legend .scale span { height: 10px; }
+.legend .scale span:first-child { border-radius: 3px 0 0 3px; }
+.legend .scale span:nth-child(9) { border-radius: 0 3px 3px 0; }
+.legend .key { width: fit-content; }
+.legend .ticks { position: relative; height: 16px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.legend .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.legend .ends { display: flex; justify-content: space-between; margin-top: 2px; color: var(--ink-3); }
+.legend .nd { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--ink-3); }
+.legend .nd i { width: 14px; height: 10px; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--nodata) 0 2px, var(--nodata-hatch) 2px 3px); }
+
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--ink);
+  color: var(--panel);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  max-width: 240px;
+  transform: translate(12px, 12px);
+  z-index: 10;
+}
+.tooltip b { display: block; font: 600 14px/1.3 var(--font-display); margin-bottom: 2px; }
+.tooltip .muted { opacity: 0.72; }
+
+.status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); padding: 24px; text-align: center; }
+.status[hidden] { display: none; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
+  .panel { display: contents; }
+  .panel > * { padding-left: 20px; padding-right: 20px; }
+  .masthead { padding-top: 20px; order: 1; }
+  .calc { order: 2; padding-top: 16px; }
+  .map-pane { order: 3; display: flex; flex-direction: column; margin-top: 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .map-pane svg { height: auto; aspect-ratio: 1.75; }
+  .result { order: 4; padding-top: 20px; min-height: 0; }
+  .ranking { order: 5; padding-top: 24px; }
+  .sources { order: 6; margin: 24px 20px; padding: 14px 0 0; }
+  body { background: var(--panel); }
+  .legend { position: static; margin: 0 12px 12px; padding: 8px 10px 6px; background: transparent; backdrop-filter: none; border: 0; }
+  .legend .key { width: 100%; }
+  .legend .scale { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+  .legend .ticks span:nth-child(even) { display: none; }
+  .zoom { top: 8px; right: 8px; flex-direction: row; }
+  .zoom button { width: 32px; height: 32px; font-size: 16px; }
+  .zoom button + button { border-top: 0; border-left: 1px solid var(--line); }
+}
+@media (prefers-reduced-motion: reduce) { .land { transition: none; } }
+@media (forced-colors: active) { .land { stroke: CanvasText; } }
+</style>
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <header class="masthead">
+      <h1>Salary converter</h1>
+      <p>What your pay buys elsewhere, adjusted for local prices.</p>
+    </header>
+
+    <section class="calc" aria-label="Your salary">
+      <div class="sentence">
+        I earn
+        <label class="slot">
+          <span class="visually-hidden">Amount</span>
+          <input id="amount" inputmode="decimal" autocomplete="off" spellcheck="false" value="100,000">
+          <span class="unit" id="amount-unit">USD</span>
+        </label>
+        in
+        <span class="slot country-slot" id="base-slot">
+          <input id="base" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="base-list" aria-label="Country you earn in" autocomplete="off" spellcheck="false">
+          <span class="chev" aria-hidden="true">▾</span>
+          <ul class="listbox" id="base-list" role="listbox" hidden></ul>
+        </span>
+      </div>
+    </section>
+
+    <section class="result" id="result" aria-live="polite"></section>
+
+    <section class="ranking" aria-labelledby="ranking-title">
+      <div class="ranking-head">
+        <h2 id="ranking-title">Every country</h2>
+        <div class="sort" role="group" aria-label="Sort countries">
+          <button type="button" data-sort="cheap" aria-pressed="true">Cheapest</button>
+          <button type="button" data-sort="dear" aria-pressed="false">Priciest</button>
+          <button type="button" data-sort="name" aria-pressed="false">A–Z</button>
+        </div>
+        <label class="visually-hidden" for="filter">Filter countries</label>
+        <input class="filter" id="filter" type="search" placeholder="Find a country" autocomplete="off">
+      </div>
+      <ol class="rows" id="rows"></ol>
+      <button type="button" class="more" id="more" hidden></button>
+    </section>
+
+    <footer class="sources" id="sources"></footer>
+  </aside>
+
+  <main class="map-pane" id="map-pane" aria-label="Map of the cost of the same lifestyle in each country">
+    <svg id="map" role="img" aria-label="World map shaded by cost of living relative to your country"></svg>
+    <div class="zoom">
+      <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+      <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
+      <button type="button" id="zoom-reset" aria-label="Show whole world">⟲</button>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="tooltip" id="tooltip" hidden></div>
+    <div class="status" id="status">Loading prices and exchange rates…</div>
+  </main>
+</div>
+</body>
+</html>
